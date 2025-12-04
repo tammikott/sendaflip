@@ -1,0 +1,82 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+*.egg-info/
+dist/
+build/
+.pytest_cache/
+.coverage
+htmlcov/
+.coverage.*
+*.cover
+.hypothesis/
+
+# Flask
+instance/
+.webassets-cache
+
+# Docker
+*.env
+.env*
+!.env.example
+docker-compose.override.yml
+.dockerignore
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+
+# Meie projektispetsiifilised failid
+demo_critical.txt
+*.log
+*.sqlite3
+secrets/
+keys/
+config/
+*.pem
+*.key
+*.crt
+*.p12
+*.pfx
+
+# Ansible
+ansible/vault_password
+ansible/*.retry
+ansible/roles/
+
+# Sünkimisfailid
+*.pid
+*.socket
+
+# Temporary files
+tmp/
+temp/
+
+# Logid
+logs/
+*.log
+
+# Süsteemifailid
+.system_critical.txt
+dangerous_file.txt
+critical_system_file.txt
+
+# GitHub Actions artefaktid
+.github/actions/artifacts/
+
+# Python virtuaalkeskkond
+pyvenv.cfg
+pip-selfcheck.json

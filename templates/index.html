@@ -1,0 +1,222 @@
+<!DOCTYPE html>
+<html lang="et">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SendaFlip - Riskantne Mündivisk</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <style>
+        body {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+        .game-container {
+            background: white;
+            border-radius: 20px;
+            padding: 30px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+            max-width: 600px;
+            margin: 0 auto;
+        }
+        .coin {
+            width: 150px;
+            height: 150px;
+            background: linear-gradient(45deg, #ffd700, #ffec8b);
+            border-radius: 50%;
+            margin: 20px auto;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 24px;
+            font-weight: bold;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+            transition: transform 1s;
+        }
+        .coin.flipping {
+            animation: flip 1s ease-in-out;
+        }
+        @keyframes flip {
+            0% { transform: rotateY(0); }
+            50% { transform: rotateY(180deg); }
+            100% { transform: rotateY(360deg); }
+        }
+        .danger-zone {
+            background: #ffebee;
+            border: 2px solid #ffcdd2;
+            border-radius: 10px;
+            padding: 15px;
+            margin-top: 20px;
+        }
+        .choice-btn {
+            font-size: 18px;
+            padding: 15px 30px;
+            margin: 10px;
+            transition: all 0.3s;
+        }
+        .choice-btn:hover {
+            transform: translateY(-3px);
+        }
+    </style>
+</head>
+<body>
+    <div class="game-container">
+        <h1 class="text-center mb-4">🎲 SendaFlip 🪙</h1>
+        <p class="text-center text-muted mb-4">
+            Vali tulemus, viska münt. Kui võidad - õnne! Kui kaotad... noh, ära kaota.
+        </p>
+        
+        <div class="text-center mb-4">
+            <h3>Vali oma tulemus:</h3>
+            <button class="btn btn-success choice-btn" onclick="choose('heads')">
+                <h4>🦅 KULL</h4>
+            </button>
+            <button class="btn btn-primary choice-btn" onclick="choose('tails')">
+                <h4>📄 KIRI</h4>
+            </button>
+        </div>
+        
+        <div id="coinResult" class="coin text-center">
+            VALI ESIMESENA
+        </div>
+        
+        <div class="text-center mt-4">
+            <button id="flipBtn" class="btn btn-warning btn-lg" onclick="flipCoin()" disabled>
+                VISKA MÜNT
+            </button>
+        </div>
+        
+        <div id="resultMessage" class="alert mt-4 text-center" style="display: none;"></div>
+        
+        <div class="danger-zone mt-4">
+            <h4>⚠️ Ohutuse info</h4>
+            <p><strong>Praegune režiim: OHUTU</strong></p>
+            <p id="fileStatus">Demo faili olek: kontrollin...</p>
+            <div class="text-center">
+                <button class="btn btn-outline-secondary btn-sm" onclick="checkFileStatus()">
+                    Kontrolli faili olekut
+                </button>
+                <button class="btn btn-outline-info btn-sm" onclick="createDemoFile()">
+                    Loo demo fail uuesti
+                </button>
+            </div>
+        </div>
+        
+        <div class="mt-4 text-center">
+            <div class="btn-group">
+                <button class="btn btn-outline-success" onclick="setMode('safe')">
+                    Ohutu režiim (praegu)
+                </button>
+                <button class="btn btn-outline-danger" onclick="showDangerWarning()">
+                    Ohtlik režiim (keelatud)
+                </button>
+            </div>
+        </div>
+        
+        <div class="mt-4 text-center text-muted small">
+            <p>Git + GitHub Actions + Docker + Ansible projekt</p>
+            <p>Autor: tammikott</p>
+        </div>
+    </div>
+    
+    <script>
+        let currentChoice = null;
+        
+        function choose(choice) {
+            currentChoice = choice;
+            document.getElementById('flipBtn').disabled = false;
+            
+            // Värskenda nuppe
+            document.querySelectorAll('.choice-btn').forEach(btn => {
+                btn.classList.remove('btn-success', 'btn-primary');
+                btn.classList.add('btn-outline-secondary');
+            });
+            
+            if (choice === 'heads') {
+                document.querySelector('.choice-btn:nth-child(1)').classList.remove('btn-outline-secondary');
+                document.querySelector('.choice-btn:nth-child(1)').classList.add('btn-success');
+            } else {
+                document.querySelector('.choice-btn:nth-child(2)').classList.remove('btn-outline-secondary');
+                document.querySelector('.choice-btn:nth-child(2)').classList.add('btn-primary');
+            }
+            
+            document.getElementById('coinResult').innerHTML = choice === 'heads' ? '🦅 KULL' : '📄 KIRI';
+        }
+        
+        function flipCoin() {
+            if (!currentChoice) return;
+            
+            const coin = document.getElementById('coinResult');
+            const flipBtn = document.getElementById('flipBtn');
+            const resultMessage = document.getElementById('resultMessage');
+            
+            // Animeeri münt
+            coin.classList.add('flipping');
+            flipBtn.disabled = true;
+            resultMessage.style.display = 'none';
+            
+            // Saada päring serverisse
+            fetch('/flip', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({ choice: currentChoice })
+            })
+            .then(response => response.json())
+            .then(data => {
+                setTimeout(() => {
+                    coin.classList.remove('flipping');
+                    
+                    // Näita tulemust
+                    const resultText = data.result === 'heads' ? '🦅 KULL' : '📄 KIRI';
+                    coin.innerHTML = resultText;
+                    
+                    // Näita sõnumit
+                    resultMessage.style.display = 'block';
+                    resultMessage.className = `alert ${data.success ? 'alert-success' : 'alert-danger'}`;
+                    resultMessage.innerHTML = `
+                        <h5>${data.message}</h5>
+                        <p>Tulemus: ${resultText}</p>
+                        ${data.file_deleted !== undefined ? `<small>Fail kustutatud: ${data.file_deleted ? 'JAH' : 'EI'}</small>` : ''}
+                    `;
+                    
+                    flipBtn.disabled = false;
+                    checkFileStatus(); // Värskenda faili olekut
+                }, 1000);
+            });
+        }
+        
+        function checkFileStatus() {
+            fetch('/check-demo-file')
+                .then(response => response.json())
+                .then(data => {
+                    document.getElementById('fileStatus').innerHTML = 
+                        `Demo faili olek: ${data.exists ? 'EXISTEERIB' : 'KUSTUTATUD'}`;
+                });
+        }
+        
+        function createDemoFile() {
+            fetch('/create-demo-file', {
+                method: 'POST'
+            })
+            .then(response => response.json())
+            .then(data => {
+                alert(data.success ? 'Demo fail loodud!' : 'Viga demo faili loomisel');
+                checkFileStatus();
+            });
+        }
+        
+        function setMode(mode) {
+            alert(`Režiim seatud: ${mode.toUpperCase()}\n\nPraegu on ainult ohutu režiim saadaval.`);
+        }
+        
+        function showDangerWarning() {
+            alert('⚠️ HOIATUS! ⚠️\n\nOhtlik režiim on hetkel keelatud.\nSelle aktiveerimiseks vajalik kood saadetakse alles pärast kõigi tööriistade seadistamist.');
+        }
+        
+        // Kontrolli faili olekut lehe laadimisel
+        document.addEventListener('DOMContentLoaded', checkFileStatus);
+    </script>
+</body>
+</html>
