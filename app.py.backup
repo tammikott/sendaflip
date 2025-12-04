@@ -4,15 +4,8 @@ from flask import Flask, render_template, request, jsonify
 
 app = Flask(__name__)
 
-# Loe konfiguratsiooni
-try:
-    from config import DEMO_FILE, SECRET_KEY
-except ImportError:
-    # Vaikimisi väärtused
-    DEMO_FILE = "demo_critical.txt"
-    SECRET_KEY = "dev-secret-key"
-
-app.secret_key = SECRET_KEY
+# Ohutu faili tee (ei tee midagi ohtlikku)
+DEMO_FILE = "demo_critical.txt"
 
 def create_demo_file():
     """Loo demo fail, mida saab ohutult kustutada"""
@@ -20,20 +13,19 @@ def create_demo_file():
         with open(DEMO_FILE, "w") as f:
             f.write("See on demo fail. Kui sa kaotad mängus, kustutatakse see.\n")
             f.write("See on OHUTU - see ei kahjusta sinu arvutit.\n")
-            f.write("Fail asub: " + os.path.abspath(DEMO_FILE) + "\n")
-        return True, DEMO_FILE
-    except Exception as e:
-        return False, str(e)
+        return True
+    except:
+        return False
 
 def delete_demo_file():
     """Kustuta demo fail (ohutu)"""
     try:
         if os.path.exists(DEMO_FILE):
             os.remove(DEMO_FILE)
-            return True, "Fail kustutatud"
-        return False, "Faili ei eksisteeri"
-    except Exception as e:
-        return False, str(e)
+            return True
+        return False
+    except:
+        return False
 
 @app.route('/')
 def index():
@@ -42,7 +34,11 @@ def index():
 @app.route('/flip', methods=['POST'])
 def flip_coin():
     data = request.json
-    user_choice = data.get('choice', 'heads')
+    user_choice = data.get('choice', 'heads')  # 'heads' või 'tails'
+    
+    # Loo demo fail esimesel korral
+    if not os.path.exists(DEMO_FILE):
+        create_demo_file()
     
     # Viska münt
     result = random.choice(['heads', 'tails'])
@@ -52,47 +48,33 @@ def flip_coin():
         return jsonify({
             'success': True,
             'result': result,
-            'message': 'Palju õnne! Sa võitsid! 🎉',
+            'message': 'Palju õnne! Sa võitsid!',
             'danger': False
         })
     else:
         # Kaotuse korral kustuta demo fail
-        deleted, message = delete_demo_file()
+        deleted = delete_demo_file()
+        message = 'Kahju! Sa kaotasid. Demo fail kustutatud.' if deleted else 'Kaotasid, aga demo faili ei kustutatud.'
+        
         return jsonify({
             'success': False,
             'result': result,
-            'message': f'Kahju! Sa kaotasid. {message}',
-            'danger': False,
+            'message': message,
+            'danger': False,  # Ohutu versioonis on alati False
             'file_deleted': deleted
         })
 
 @app.route('/create-demo-file', methods=['POST'])
 def create_file():
     """API endpoint demo faili loomiseks"""
-    success, message = create_demo_file()
-    return jsonify({'success': success, 'message': message})
+    success = create_demo_file()
+    return jsonify({'success': success, 'file': DEMO_FILE})
 
 @app.route('/check-demo-file', methods=['GET'])
 def check_file():
     """API endpoint demo faili kontrollimiseks"""
     exists = os.path.exists(DEMO_FILE)
-    location = os.path.abspath(DEMO_FILE) if exists else None
-    return jsonify({'exists': exists, 'location': location})
-
-@app.route('/health')
-def health():
-    """Health check endpoint"""
-    return jsonify({'status': 'healthy', 'app': 'SendaFlip'})
-
-@app.route('/info')
-def info():
-    """Info endpoint (ei näita salajast infot)"""
-    return jsonify({
-        'app': 'SendaFlip',
-        'version': '1.0.0',
-        'mode': 'safe',
-        'demo_file': DEMO_FILE
-    })
+    return jsonify({'exists': exists, 'file': DEMO_FILE})
 
 if __name__ == '__main__':
     # Loo demo fail rakenduse käivitamisel

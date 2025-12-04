@@ -80,3 +80,4 @@ critical_system_file.txt
 # Python virtuaalkeskkond
 pyvenv.cfg
 pip-selfcheck.json
+config.py

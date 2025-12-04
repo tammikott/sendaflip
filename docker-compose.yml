@@ -5,8 +5,14 @@ services:
     build: .
     ports:
       - "5000:5000"
-    volumes:
-      - .:/app
     environment:
-      - FLASK_ENV=development
+      - FLASK_ENV=production
+      - PYTHONUNBUFFERED=1
+    volumes:
+      - ./demo_critical.txt:/app/demo_critical.txt:rw
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
